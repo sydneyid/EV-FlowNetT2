@@ -3,6 +3,8 @@ import tensorflow as tf
 import numpy as np
 import math
 import cv2
+from scipy.ndimage import map_coordinates
+
 
 """
 Calculates per pixel flow error between flow_pred and flow_gt. 
@@ -14,6 +16,7 @@ def flow_error_dense(flow_gt, flow_pred, event_img, is_car=False):
     max_row = flow_gt.shape[1]
 
     if is_car:
+        # print('DID IT ENTER IS CAR')
         max_row = 190
 
     event_img_cropped = np.squeeze(event_img)[:max_row, :]
@@ -48,24 +51,14 @@ Propagates x_indices and y_indices by their flow, as defined in x_flow, y_flow.
 x_mask and y_mask are zeroed out at each pixel where the indices leave the image.
 The optional scale_factor will scale the final displacement.
 """
-def prop_flow(x_flow, y_flow, x_indices, y_indices, x_mask, y_mask, scale_factor=1.0):
-    flow_x_interp = cv2.remap(x_flow,
-                              x_indices,
-                              y_indices,
-                              cv2.INTER_NEAREST)
-    
-    flow_y_interp = cv2.remap(y_flow,
-                              x_indices,
-                              y_indices,
-                              cv2.INTER_NEAREST)
-
-    x_mask[flow_x_interp == 0] = False
-    y_mask[flow_y_interp == 0] = False
-        
+def prop_flow(x_flow, y_flow, x_indices, y_indices, mask, scale_factor=1.0):
+    flow_x_interp = map_coordinates(x_flow, [y_indices, x_indices], order=1, mode='nearest')
+    flow_y_interp = map_coordinates(y_flow, [y_indices, x_indices], order=1, mode='nearest')
     x_indices += flow_x_interp * scale_factor
     y_indices += flow_y_interp * scale_factor
-
-    return
+    # Mask out-of-bounds
+    mask &= (x_indices >= 0) & (x_indices < x_flow.shape[1]) & (y_indices >= 0) & (y_indices < x_flow.shape[0])
+    return x_indices, y_indices, mask
 
 """
 The ground truth flow maps are not time synchronized with the grayscale images. Therefore, we
@@ -104,8 +97,10 @@ def estimate_corresponding_gt_flow(x_flow_in,
     x_flow = np.squeeze(x_flow_in[gt_iter, ...])
     y_flow = np.squeeze(y_flow_in[gt_iter, ...])
 
-    dt = end_time - start_time
     
+    dt = end_time - start_time
+    # print('dt is '+str(dt)+ ' ground truth dt is '+str(gt_dt))
+    # print('gt start is ' + str(gt_timestamps[gt_iter] )+ ' start time is '+str(start_time))
     # No need to propagate if the desired dt is shorter than the time between gt timestamps.
     if gt_dt > dt:
         return x_flow * dt / gt_dt, y_flow * dt / gt_dt

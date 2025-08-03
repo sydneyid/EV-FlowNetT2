@@ -66,7 +66,8 @@ def configs():
                         action='store_true',
                         help='If true, the flow predictions will be visualized during testing.')
     parser.add_argument('--test_skip_frames',
-                        action='store_true',
+                        type=bool,
+                        default=False,
                         help='If true, input images will be 4 frames apart.')
     parser.add_argument('--save_test_output',
                         action='store_true',

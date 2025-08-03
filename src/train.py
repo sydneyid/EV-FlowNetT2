@@ -27,21 +27,17 @@ def main():
 
     # Fix the random seed for reproducibility.
     # Remove this if you are using this code for something else!
-    tf.set_random_seed(12345)
+    tf.random.set_seed(12345)
         
-    event_img_loader, prev_img_loader, next_img_loader, _, n_ima = get_loader(
+    dataset, n_ima = get_loader(
         args.data_path, args.batch_size, args.image_width, args.image_height,
         split='train',
+        sequence=args.test_sequence,
         shuffle=True)
-    print("Number of images: {}".format(n_ima))
     
-    trainer = EVFlowNet(args,
-                        event_img_loader,
-                        prev_img_loader,
-                        next_img_loader,
-                        n_ima,
-                        is_training=True)
-    trainer.train()
+    print("Number of images: {}".format(n_ima))
+    trainer = EVFlowNet(args)
+    trainer.train_model(dataset, n_ima)
     
 if __name__ == "__main__":
     main()

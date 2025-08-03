@@ -10,10 +10,10 @@ as visualized by flow_viz_tf.
 Output: color_wheel_rgb: [1, width, height, 3]
 """
 def draw_color_wheel_tf(width, height):
-    color_wheel_x = tf.lin_space(-width / 2.,
+    color_wheel_x = tf.linspace(-width / 2.,
                                  width / 2.,
                                  width)
-    color_wheel_y = tf.lin_space(-height / 2.,
+    color_wheel_y = tf.linspace(-height / 2.,
                                  height / 2.,
                                  height)
     color_wheel_X, color_wheel_Y = tf.meshgrid(color_wheel_x, color_wheel_y)
