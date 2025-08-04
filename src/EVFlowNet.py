@@ -88,10 +88,15 @@ class EVFlowNet(tf.keras.Model):
         for step, batch in enumerate(dataset):
             if step >= num_steps:
                 break
-            event_img, prev_img, next_img, _ = batch  # Assuming dataset yields these
-            loss_value = train_step(event_img, prev_img, next_img)
-            if step % debug_rate == 0:
-                print(f"Step {step}, Loss: {loss_value.numpy()}")
+            try:
+                event_img, prev_img, next_img, _ = batch
+                loss_value = train_step(event_img, prev_img, next_img)
+                if step % debug_rate == 0:
+                    print(f"Step {step}, Loss: {loss_value.numpy()}")
+            except tf.errors.NotFoundError as e:
+                print(f"Skipping batch {step} due to missing file: {e}")
+                continue
+    
 
 if __name__ == "__main__":
     # Example main for TF2
