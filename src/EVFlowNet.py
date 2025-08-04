@@ -85,7 +85,9 @@ class EVFlowNet(tf.keras.Model):
                 tf.summary.image("g-Event image", event_img_sum, step=global_step, max_outputs=self._args.batch_size)
             return loss
 
-        for step, batch in enumerate(dataset.take(num_steps)):
+        for step, batch in enumerate(dataset):
+            if step >= num_steps:
+                break
             event_img, prev_img, next_img, _ = batch  # Assuming dataset yields these
             loss_value = train_step(event_img, prev_img, next_img)
             if step % debug_rate == 0:
