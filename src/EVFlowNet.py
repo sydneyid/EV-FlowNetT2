@@ -88,6 +88,9 @@ class EVFlowNet(tf.keras.Model):
         for step, batch in enumerate(dataset):
             if step >= num_steps:
                 break
+            if batch is None or (isinstance(batch, (list, tuple)) and any(x is None or tf.size(x) == 0 for x in batch)):
+                print(f"Skipping empty batch at step {step}")
+                continue
             try:
                 event_img, prev_img, next_img, _ = batch
                 loss_value = train_step(event_img, prev_img, next_img)
