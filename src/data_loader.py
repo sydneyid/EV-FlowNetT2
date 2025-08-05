@@ -8,6 +8,53 @@ _MAX_SKIP_FRAMES = 6
 _TEST_SKIP_FRAMES = 4
 _N_SKIP = 1
 
+def safe_load_image(filename):
+    filename = filename.numpy().decode('utf-8')
+    if not os.path.exists(filename):
+        # Return a dummy tensor with shape [0] to signal missing file
+        return tf.constant([], dtype=tf.uint8)
+    image = tf.io.read_file(filename)
+    image = tf.image.decode_png(image, channels=3)
+    return image
+
+def safe_load_image_tf(filename, channels=1):
+    def _safe_load(filename_np):
+        # filename_np is either bytes or a numpy array
+        if isinstance(filename_np, bytes):
+            filename_str = filename_np.decode('utf-8')
+        else:
+            filename_str = filename_np.numpy().decode('utf-8')
+        if not os.path.exists(filename_str):
+            return np.zeros((0, 0, channels), dtype=np.uint8)
+        image = tf.io.read_file(filename_str)
+        image = tf.image.decode_png(image, channels=channels)
+        return image.numpy()
+    image = tf.py_function(_safe_load, [filename], tf.uint8)
+    image.set_shape([None, None, channels])
+    return image
+
+def find_next_valid_img_path(idx, root_path, prefix, cam, channels=1, max_search=10):
+    import os
+    for offset in range(max_search):
+        idx_str = str(idx + offset).zfill(5)
+        path = os.path.join(root_path.numpy().decode('utf-8'), prefix.numpy().decode('utf-8'), f"{cam.numpy().decode('utf-8')}_image{idx_str}.png")
+        if os.path.exists(path):
+            return path
+    # If not found, return empty string
+    return ""
+
+def build_img_path_tf(idx, root_path, prefix, cam, channels=1):
+    path = tf.py_function(find_next_valid_img_path, [idx, root_path, prefix, cam, channels], tf.string)
+    return path
+
+def load_image_wrapper(filename):
+    image = tf.py_function(safe_load_image, [filename], tf.uint8)
+    image.set_shape([None, None, None])  # Allow dynamic shape
+    return image
+
+def filter_missing(image, *rest):
+    # Filter out images with shape [0]
+    return tf.size(image) > 0
 
 def rotate_image(image, angle_degrees):
     # Convert degrees to radians
@@ -117,17 +164,25 @@ def _parse_function(serialized_example, image_width, image_height, skip_frames, 
     def build_img_path(idx):
         idx_str = tf.strings.as_string(idx, width=5, fill='0') #tf.strings.format("{:05d}", [idx2])
         return tf.strings.join([root_path, "/", prefix, "/", cam, "_image", idx_str, ".png"])
+    
+    prev_img_path = build_img_path_tf(image_iter, root_path, prefix, cam)
+    next_img_path = build_img_path_tf(image_iter + n_frames, root_path, prefix, cam)
 
-    prev_img_path = build_img_path(image_iter)
-    next_img_path = build_img_path(image_iter + n_frames)
-
-    prev_image = tf.io.read_file(prev_img_path)
-    prev_image = tf.image.decode_png(prev_image, channels=1)
+    prev_image = safe_load_image_tf(prev_img_path, channels=1)
     prev_image = tf.cast(prev_image, tf.float32)
 
-    next_image = tf.io.read_file(next_img_path)
-    next_image = tf.image.decode_png(next_image, channels=1)
+    next_image = safe_load_image_tf(next_img_path, channels=1)
     next_image = tf.cast(next_image, tf.float32)
+
+    # Early exit if any image is missing
+    if tf.size(prev_image) == 0 or tf.size(next_image) == 0:
+        # Return dummy tensors so filter_missing can remove this sample
+        event_image = tf.zeros([image_height, image_width, 4], dtype=tf.float32)
+        prev_image = tf.zeros([image_height, image_width, 1], dtype=tf.float32)
+        next_image = tf.zeros([image_height, image_width, 1], dtype=tf.float32)
+        timestamps = tf.zeros([2], dtype=tf.float64)
+        return event_image, prev_image, next_image, timestamps
+
 
     # Data augmentation
     n_split = 6
@@ -156,6 +211,11 @@ def _parse_function(serialized_example, image_width, image_height, skip_frames, 
 
     return event_image, prev_image, next_image, timestamps
 
+def filter_missing(event_image, prev_image, next_image, timestamps):
+    # Skip samples where any image is empty
+    return (tf.size(prev_image) > 0) & (tf.size(next_image) > 0)
+
+
 def get_loader(root, batch_size, image_width, image_height, split=None, shuffle=True, sequence=None, skip_frames=False, time_only=False, count_only=False):
     print("Loading data!")
     if split is None:
@@ -165,7 +225,7 @@ def get_loader(root, batch_size, image_width, image_height, split=None, shuffle=
     raw_dataset = tf.data.TFRecordDataset(tfrecord_paths_np)
     parse_fn = lambda x: _parse_function(x, image_width, image_height, skip_frames, time_only, count_only, split, root)
     dataset = raw_dataset.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
+    dataset = dataset.filter(filter_missing)
     if shuffle and split == 'train':
         dataset = dataset.shuffle(buffer_size=20000)
     dataset = dataset.batch(batch_size)
